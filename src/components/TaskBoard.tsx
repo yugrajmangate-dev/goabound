@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import type { Status, Task } from '../types';
 import { COLUMNS, STATUS_ORDER } from '../types';
 import { AddTaskForm } from './AddTaskForm';
 import { Emblem } from './Emblem';
+import { LoadDemoBoard } from './LoadDemoBoard';
 import { TaskCard } from './TaskCard';
 
 interface TaskBoardProps {
@@ -19,6 +20,9 @@ interface TaskBoardProps {
   onClearSamples: () => void;
   onRestoreSamples: () => void;
   onFocusIdea: () => void;
+  onCopyReport: () => Promise<boolean>;
+  onLoadDemo: () => void;
+  saveStatus: ReactNode;
 }
 
 interface DropTarget {
@@ -30,6 +34,18 @@ export function TaskBoard(props: TaskBoardProps) {
   const { tasks } = props;
   const [draggingId, setDraggingId] = useState<string | null>(null);
   const [dropTarget, setDropTarget] = useState<DropTarget | null>(null);
+
+  const [copied, setCopied] = useState(false);
+
+  useEffect(() => {
+    if (!copied) return;
+    const id = window.setTimeout(() => setCopied(false), 2000);
+    return () => window.clearTimeout(id);
+  }, [copied]);
+
+  const copyReport = async () => {
+    setCopied(await props.onCopyReport());
+  };
 
   const endDrag = () => {
     setDraggingId(null);
@@ -50,12 +66,35 @@ export function TaskBoard(props: TaskBoardProps) {
           <h2 id="board-heading" className="panel__title">
             From jetty to shore
           </h2>
+          {props.saveStatus}
         </div>
         <div className="board-panel__tools">
           <p className="board-panel__kbd">
             Drag cards between columns, or use the buttons. Shortcut: <kbd>Alt</kbd>+<kbd>←</kbd>/<kbd>→</kbd> on a card.
           </p>
           <div className="board-panel__sample-actions">
+            <button
+              type="button"
+              className={`btn btn--primary btn--sm report-btn${copied ? ' report-btn--copied' : ''}`}
+              onClick={copyReport}
+              aria-describedby="report-btn-hint"
+            >
+              <svg viewBox="0 0 20 20" width="16" height="16" aria-hidden="true">
+                {copied ? (
+                  <path d="M5 10.5l3.2 3.2L15 7" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+                ) : (
+                  <>
+                    <rect x="7" y="7" width="9" height="10" rx="2" fill="none" stroke="currentColor" strokeWidth="1.6" />
+                    <path d="M13 4.5H6a2 2 0 0 0-2 2V14" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" />
+                  </>
+                )}
+              </svg>
+              {copied ? 'Copied!' : 'Copy progress report'}
+            </button>
+            <span id="report-btn-hint" className="sr-only">
+              Copies a Markdown summary of every task, grouped by status, to your clipboard.
+            </span>
+            <LoadDemoBoard taskCount={tasks.length} onConfirm={props.onLoadDemo} />
             <button
               type="button"
               className="btn btn--ghost btn--sm"

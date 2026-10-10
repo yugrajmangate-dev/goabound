@@ -10,4 +10,9 @@ export const STORAGE_KEYS = {
   draft: 'goabound:v1:idea-draft',
   timer: 'goabound:v1:timer',
   sessions: 'goabound:v1:focus-sessions',
+  /** The board as it was just before "Load demo board" replaced it. */
+  boardBackup: 'goabound:v1:board-backup',
+  /** Untouched copy of saved board data that could not be read cleanly. */
+  recovery: 'goabound:v1:tasks-recovery',
+  welcomeDismissed: 'goabound:v1:welcome-dismissed',
 } as const;

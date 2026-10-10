@@ -5,11 +5,16 @@ import { Header } from './components/Header';
 import { IdeaCapture, type IdeaCaptureHandle, type IdeaMode } from './components/IdeaCapture';
 import { ProgressSummary } from './components/ProgressSummary';
 import { TaskBoard } from './components/TaskBoard';
+import { RecoveryNotice, SaveStatus } from './components/StorageNotices';
 import { Toasts } from './components/Toasts';
+import { WelcomeBanner } from './components/WelcomeBanner';
 import { useNow } from './hooks/useNow';
 import { useToasts } from './hooks/useToasts';
+import { STORAGE_KEYS } from './constants';
+import { createDemoTasks, DEMO_PROJECT } from './demoBoard';
+import { buildProgressReport, copyText } from './report';
 import { createSampleTasks, SAMPLE_IDS } from './sampleTasks';
-import { loadTasks, saveTasks } from './storage';
+import { loadTasks, readString, saveTasks, storageAvailable, writeJSON, writeString, type RecoveryInfo } from './storage';
 import type { Status, Task } from './types';
 import { STATUS_LABEL } from './types';
 import { ideaToTask, ideaToTasks, uid } from './utils';
@@ -35,14 +40,51 @@ function reinsert(list: Task[], removed: Removed[]): Task[] {
 const short = (title: string) => (title.length > 48 ? `${title.slice(0, 46)}…` : title);
 
 export default function App() {
-  const [tasks, setTasks] = useState<Task[]>(loadTasks);
+  const [initial] = useState(loadTasks);
+  const [tasks, setTasks] = useState<Task[]>(initial.tasks);
+  const [recovery, setRecovery] = useState<RecoveryInfo | null>(initial.recovery);
+  const [save, setSave] = useState<{ ok: boolean; at: number | null }>(() => ({ ok: storageAvailable(), at: null }));
+  // Welcome only people who haven't started yet: first visit, or a board that is still the untouched starter plan.
+  const [showWelcome, setShowWelcome] = useState(
+    () =>
+      readString(STORAGE_KEYS.welcomeDismissed) !== '1' &&
+      (initial.firstVisit || initial.tasks.every((t) => t.source === 'sample')),
+  );
   const [highlightId, setHighlightId] = useState<string | null>(null);
   const [focusId, setFocusId] = useState<string | null>(null);
   const { toasts, push, dismiss } = useToasts();
   const ideaRef = useRef<IdeaCaptureHandle>(null);
   const now = useNow(1000);
 
-  useEffect(() => saveTasks(tasks), [tasks]);
+  useEffect(() => {
+    // If damaged data couldn't be copied aside, leave the original in place until the user changes something.
+    if (tasks === initial.tasks && initial.recovery && !initial.recovery.backupKey) return;
+    const ok = saveTasks(tasks);
+    setSave((prev) => {
+      if (prev.ok && !ok) {
+        push('This browser isn’t letting GoaBound save. Your board will only last until you close this tab.', {
+          tone: 'warning',
+        });
+      }
+      return { ok, at: ok ? Date.now() : prev.at };
+    });
+  }, [tasks, push, initial]);
+
+  // Keep several open tabs in step: when another tab saves the board, show its version here.
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key !== STORAGE_KEYS.tasks || e.newValue === null) return;
+      const next = loadTasks();
+      if (!next.recovery) setTasks(next.tasks);
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
+  }, []);
+
+  const dismissWelcome = () => {
+    setShowWelcome(false);
+    writeString(STORAGE_KEYS.welcomeDismissed, '1');
+  };
 
   useEffect(() => {
     if (!highlightId) return;
@@ -170,6 +212,31 @@ export default function App() {
     push(`Restored ${fresh.length} starter task${fresh.length === 1 ? '' : 's'}.`);
   };
 
+  const loadDemo = () => {
+    const previous = tasks;
+    // Keep a copy of the replaced board in localStorage as a safety net beyond the Undo button.
+    if (previous.length > 0) writeJSON(STORAGE_KEYS.boardBackup, { savedAt: Date.now(), tasks: previous });
+    const demo = createDemoTasks();
+    setTasks(demo);
+    setHighlightId(demo.find((t) => t.status === 'progress')?.id ?? null);
+    push(`Demo board loaded — the ${DEMO_PROJECT} project with ${demo.length} tasks. Try the tips in each card’s notes.`, {
+      action:
+        previous.length > 0
+          ? { label: 'Undo', onAction: () => setTasks(previous) }
+          : undefined,
+    });
+  };
+
+  const copyReport = async (): Promise<boolean> => {
+    const ok = await copyText(buildProgressReport(tasks));
+    if (ok) {
+      push(`Progress report copied — ${tasks.length} task${tasks.length === 1 ? '' : 's'} in Markdown, ready to paste.`);
+    } else {
+      push('Couldn’t reach the clipboard. Check your browser’s clipboard permission and try again.', { tone: 'warning' });
+    }
+    return ok;
+  };
+
   return (
     <>
       <a className="skip-link" href="#board-heading">
@@ -179,6 +246,18 @@ export default function App() {
       <div className="shell">
         <Header now={now} />
         <WaveRule className="wave-rule" />
+
+        {recovery && <RecoveryNotice info={recovery} onDismiss={() => setRecovery(null)} />}
+        {showWelcome && (
+          <WelcomeBanner
+            onExploreDemo={() => {
+              loadDemo();
+              dismissWelcome();
+              document.getElementById('board-heading')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+            }}
+            onDismiss={dismissWelcome}
+          />
+        )}
 
         <main className="layout">
           <div className="layout__idea">
@@ -205,6 +284,9 @@ export default function App() {
               onClearSamples={clearSamples}
               onRestoreSamples={restoreSamples}
               onFocusIdea={() => ideaRef.current?.focus()}
+              onCopyReport={copyReport}
+              onLoadDemo={loadDemo}
+              saveStatus={<SaveStatus ok={save.ok} savedAt={save.at} />}
             />
           </div>
         </main>

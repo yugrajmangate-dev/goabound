@@ -29,6 +29,7 @@ const SOURCE_LABEL: Record<Task['source'], string> = {
   sample: 'Starter',
   idea: 'From an idea',
   manual: 'Added by you',
+  demo: 'Demo',
 };
 
 export function TaskCard(props: TaskCardProps) {

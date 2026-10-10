@@ -23,7 +23,7 @@ const INITIAL: TimerState = { status: 'idle', remaining: FOCUS_MS, endsAt: null 
 
 function loadTimer(): TimerState {
   const saved = readJSON<TimerState | null>(STORAGE_KEYS.timer, null);
-  if (!saved || typeof saved.remaining !== 'number') return INITIAL;
+  if (!saved || typeof saved !== 'object' || !Number.isFinite(saved.remaining)) return INITIAL;
   if (saved.status === 'running' && typeof saved.endsAt === 'number') {
     const left = saved.endsAt - Date.now();
     return left > 0 ? saved : { status: 'done', remaining: 0, endsAt: null };
@@ -36,7 +36,7 @@ function loadTimer(): TimerState {
 
 function loadSessions(): number {
   const log = readJSON<SessionLog | null>(STORAGE_KEYS.sessions, null);
-  return log && log.date === todayKey() ? log.count : 0;
+  return log && typeof log === 'object' && log.date === todayKey() && Number.isFinite(log.count) ? Math.max(0, log.count) : 0;
 }
 
 const RADIUS = 88;
@@ -58,7 +58,9 @@ export function FocusTimer({ notify }: FocusTimerProps) {
   const remaining = running && timer.endsAt ? Math.max(0, timer.endsAt - now) : timer.remaining;
   const progress = 1 - remaining / FOCUS_MS;
 
-  useEffect(() => writeJSON(STORAGE_KEYS.timer, timer), [timer]);
+  useEffect(() => {
+    writeJSON(STORAGE_KEYS.timer, timer);
+  }, [timer]);
 
   const chime = useCallback(() => {
     try {

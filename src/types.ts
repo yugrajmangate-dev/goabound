@@ -1,6 +1,6 @@
 export type Status = 'backlog' | 'progress' | 'shipped';
 
-export type TaskSource = 'sample' | 'idea' | 'manual';
+export type TaskSource = 'sample' | 'idea' | 'manual' | 'demo';
 
 export interface Task {
   id: string;
